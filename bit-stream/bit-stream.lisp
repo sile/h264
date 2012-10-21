@@ -23,8 +23,12 @@
 (defun eos? (in)
   (declare (bit-stream in))
   (with-slots (source octets) in
-    (and (null octets)
-         (not (listen source)))))
+    (not (listen source))))
+
+(defun byte-aligned? (in)
+  (declare (bit-stream in))
+  (with-slots (pos) in
+    (= pos 8)))
 
 (defun read-impl (octets pos bit-length)
   (if (<= bit-length pos)
@@ -40,16 +44,28 @@
               new-octets
               new-pos))))
 
+(defun fill-octets (in bit-length)
+  (with-slots (source octets pos) in
+    (loop REPEAT (- (ceiling (+ bit-length (- 8 pos)) 8) (length octets))
+          DO (setf octets (append octets (list (read-byte source nil 0)))))))
+
 (defun read (in bit-length)
   (declare (bit-stream in)
            (fixnum bit-length))
 
-  (with-slots (source octets pos) in
-    (loop REPEAT (- (ceiling (+ bit-length pos) 8) (length octets))
-          DO (setf octets (append octets (list (read-byte source nil 0)))))
-    
+  (fill-octets in bit-length)
+  (with-slots (octets pos) in
     (multiple-value-bind (value new-octets new-pos)
                          (read-impl octets pos bit-length)
       (setf octets new-octets
             pos new-pos)
       value)))
+
+(defun peek (in bit-length)
+  (declare (bit-stream in)
+           (fixnum bit-length))
+
+  (fill-octets in bit-length)
+  (with-slots (octets pos) in
+    (values (read-impl octets pos bit-length))))
+  
