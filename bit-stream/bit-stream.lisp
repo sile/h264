@@ -20,11 +20,11 @@
        (let ((,in (make-input-stream ,source)))
          ,@body))))
 
-;; TODO: もっと正確に
 (defun eos? (in)
   (declare (bit-stream in))
   (with-slots (source octets) in
-    (not (listen source))))
+    (and (not (listen source))
+         (null octets))))
 
 (defun byte-aligned? (in)
   (declare (bit-stream in))
@@ -37,14 +37,14 @@
         
         ((<= bit-length pos)
          (let ((new-pos (- pos bit-length)))
-           (values (ldb (byte bit-length new-pos) (car octets))
+           (values (ldb (byte bit-length new-pos) (or (car octets) 0))
                    (if (zerop new-pos) (cdr octets) octets)
                    (if (zerop new-pos) 8 new-pos))))
 
         (t
          (multiple-value-bind (value new-octets new-pos)
                               (read-impl (cdr octets) 8 (- bit-length pos))
-           (values (+ (ash (ldb (byte pos 0) (car octets))
+           (values (+ (ash (ldb (byte pos 0) (or (car octets) 0))
                            (- bit-length pos))
                       value)
                    new-octets
@@ -53,7 +53,8 @@
 (defun fill-octets (in bit-length)
   (with-slots (source octets pos) in
     (loop REPEAT (- (ceiling (+ bit-length (- 8 pos)) 8) (length octets))
-          DO (setf octets (append octets (list (read-byte source nil 0)))))))
+          WHILE (listen source)
+          DO (setf octets (append octets (list (read-byte source)))))))
 
 (defun read (in bit-length)
   (declare (bit-stream in)
