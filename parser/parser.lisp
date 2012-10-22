@@ -72,6 +72,139 @@
               rbsp-bytes)
       )))
 
+;; Annex.E
+(defconstant +EXTENDED_SAR+ 255); Table E-1: Meaning of sample aspect ratio indicator
+(defun parse-vui-parameters (in)
+  (with-package (:h264.bit-stream)
+    (let* ((aspect-ratio-info-present-flag (read in 1))
+           (aspect-ratio-idc 
+            (when (= aspect-ratio-info-present-flag 1)
+              (read in 8)))
+           (sar-width 
+            (when (= aspect-ratio-idc +EXTENDED_SAR+)
+              (read in 16)))
+           (sar-height
+            (when (= aspect-ratio-idc +EXTENDED_SAR+)
+              (read in 16)))
+           (overscan-info-present-flag (read in 1))
+           (overscan-appropriate-flag 
+            (when (= overscan-info-present-flag 1)
+              (read in 1)))
+           (video-signal-type-present-flag (read in 1))
+           (video-format
+            (when (= video-signal-type-present-flag 1)
+              (read in 3)))
+           (video-full-range-flag
+            (when (= video-signal-type-present-flag 1)
+              (read in 1)))
+           (colour-description-present-flag
+            (when (= video-signal-type-present-flag 1)
+              (read in 1)))
+           (colour-primaries 
+            (when (eql colour-description-present-flag 1)
+              (read in 8)))
+           (transfer-characteristics 
+            (when (eql colour-description-present-flag 1)
+              (read in 8)))
+           (matrix-coefficients
+            (when (eql colour-description-present-flag 1)
+              (read in 8)))
+           (chroma-loc-info-present-flag (read in 1))
+           (chroma-sample-loc-type-top-field
+            (when (= chroma-loc-info-present-flag 1)
+              (parse-ue in)))
+           (chroma-sample-loc-type-bottom-field
+            (when (= chroma-loc-info-present-flag 1)
+              (parse-ue in)))
+            
+           (timing-info-present-flag (read in 1))
+           (num-units-in-tick
+            (when (= timing-info-present-flag 1)
+              (read in 32)))
+           (time-scale
+            (when (= timing-info-present-flag 1)
+              (read in 32)))
+           (fixed-frame-rate-flag
+            (when (= timing-info-present-flag 1)
+              (read in 1)))
+           
+           (nal-hrd-parameters-present-flag (read in 1))
+           (nal-hrd-parameters
+            (when (= nal-hrd-parameters-present-flag 1)
+              (error "Not Implemented")))
+           (vcl-hrd-parameters-present-flag (read in 1))
+           (vcl-hrd-parameters
+            (when (= vcl-hrd-parameters-present-flag 1)
+              (error "Not Implemented")))
+           (low-delay-hrd-flag
+            (when (or (= nal-hrd-parameters-present-flag 1)
+                      (= vcl-hrd-parameters-present-flag 1))
+              (read in 1)))
+           (pic-struct-present-flag (read in 1))
+           (bitstream-restriction-flag (read in 1))
+           (motion-vectors-over-pic-boundaries-flag
+            (when (= bitstream-restriction-flag 1)
+              (read in 1)))
+           (max-bytes-per-pic-denom
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           (max-bits-per-mb-denom
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           (log2-max-mv-length-horizontal
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           (log2-max-mv-length-vertical
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           (max-num-reorder-frames
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           (max-dec-frame-buffering
+            (when (= bitstream-restriction-flag 1)
+              (parse-ue in)))
+           )
+      (list aspect-ratio-info-present-flag
+            aspect-ratio-idc
+            sar-width
+            sar-height
+
+            overscan-info-present-flag
+            overscan-appropriate-flag
+            video-signal-type-present-flag
+            video-format
+            video-full-range-flag
+            colour-description-present-flag
+            colour-primaries
+            transfer-characteristics
+            matrix-coefficients
+            
+            chroma-loc-info-present-flag
+            chroma-sample-loc-type-top-field
+            chroma-sample-loc-type-bottom-field
+            timing-info-present-flag
+            num-units-in-tick
+            time-scale
+            fixed-frame-rate-flag
+
+            nal-hrd-parameters-present-flag
+            nal-hrd-parameters
+            vcl-hrd-parameters-present-flag
+            vcl-hrd-parameters
+            low-delay-hrd-flag
+            pic-struct-present-flag
+            bitstream-restriction-flag
+            motion-vectors-over-pic-boundaries-flag
+            max-bytes-per-pic-denom
+            max-bits-per-mb-denom
+            log2-max-mv-length-horizontal
+            log2-max-mv-length-vertical
+            max-num-reorder-frames
+            max-dec-frame-buffering
+            )
+      )))
+
+
 (defun parse-seq-parameter-set-data (in)
   (with-package (:h264.bit-stream)
     (let ((profile-idc (read in 8))
@@ -83,20 +216,90 @@
           (constraint-set5-flag (read in 1))
           (reserved-zero-2bits  (read in 2))
           (level-idc            (read in 8))
+          (seq-parameter-set-id (parse-ue in))
           )
-      (values profile-idc
-              constraint-set0-flag
-              constraint-set1-flag
-              constraint-set2-flag
-              constraint-set3-flag
-              constraint-set4-flag
-              constraint-set5-flag
-              reserved-zero-2bits
-              level-idc
-              (loop FOR b = (read in 8)
-                    UNTIL (eos? in)
-                    COLLECT b)
-              ))))
+
+      (when (member profile-idc '(100 110 122 244 44 83 86 118 128))
+        (error "Not Implemented"))
+      
+      (let* ((log2-max-frame-num-minus4 (parse-ue in))
+             (pic-order-cnt-type (parse-ue in))
+             (log2-max-pic-order-cnt-lsb-minus4
+              (when (= pic-order-cnt-type 0) (parse-ue in)))
+             (delta-pic-order-always-zero-flag 
+              (when (= pic-order-cnt-type 1) (read in 1)))
+             (offset-for-non-ref-pic  
+              (when (= pic-order-cnt-type 1) (parse-se in)))
+             (offset-for-top-to-bottom-field 
+              (when (= pic-order-cnt-type 1) (parse-se in)))
+             (num-ref-frames-in-pic-order-cnt-cycle 
+              (when (= pic-order-cnt-type 1) (parse-ue in)))
+             (offsets-for-ref-frame
+              (when (= pic-order-cnt-type 1)
+                (loop REPEAT num-ref-frames-in-pic-order-cnt-cycle
+                      COLLECT (parse-se in))))
+             (max-num-ref-frames (parse-ue in))
+             (gaps-in-frame-num-value-allowed-flag (read in 1))
+             (pic-width-in-mbs-minus1 (parse-ue in))
+             (pic-height-in-map-units-minus1 (parse-ue in))
+             (frame-mbs-only-flag (read in 1))
+             (mb-adaptive-frame-field-flag
+              (when (= frame-mbs-only-flag 0) (read in 1)))
+             (direct-8x8-inference-flag (read in 1))
+             (frame-cropping-flag (read in 1))
+             (frame-crop-left-offset
+              (when (= frame-cropping-flag 1) (parse-ue in)))
+             (frame-crop-right-offset
+              (when (= frame-cropping-flag 1) (parse-ue in)))
+             (frame-crop-top-offset
+              (when (= frame-cropping-flag 1) (parse-ue in)))
+             (frame-crop-bottom-offset
+              (when (= frame-cropping-flag 1) (parse-ue in)))
+             (vui-parameters-present-flag (read in 1))
+             (vui-parameters
+              (when (= vui-parameters-present-flag 1)
+                (parse-vui-parameters in)))
+             )
+
+        (values profile-idc
+                constraint-set0-flag
+                constraint-set1-flag
+                constraint-set2-flag
+                constraint-set3-flag
+                constraint-set4-flag
+                constraint-set5-flag
+                reserved-zero-2bits
+                level-idc
+                seq-parameter-set-id
+
+                log2-max-frame-num-minus4
+                pic-order-cnt-type
+                log2-max-pic-order-cnt-lsb-minus4
+                delta-pic-order-always-zero-flag
+                offset-for-non-ref-pic
+                offset-for-top-to-bottom-field
+                num-ref-frames-in-pic-order-cnt-cycle
+                offsets-for-ref-frame
+
+                max-num-ref-frames
+                gaps-in-frame-num-value-allowed-flag
+                pic-width-in-mbs-minus1
+                pic-height-in-map-units-minus1
+                frame-mbs-only-flag
+                mb-adaptive-frame-field-flag
+                direct-8x8-inference-flag
+                frame-cropping-flag
+                frame-crop-left-offset
+                frame-crop-right-offset
+                frame-crop-top-offset
+                frame-crop-bottom-offset
+                vui-parameters-present-flag
+                vui-parameters
+                
+                (loop FOR b = (read in 8)
+                      UNTIL (eos? in)
+                      COLLECT b)
+                )))))
 
 (defun parse-sequence-parameter-set (in)
   ;;; seq-parameter-set-data
