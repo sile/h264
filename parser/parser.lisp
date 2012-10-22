@@ -44,8 +44,9 @@
           (nal-ref-idc        (read in 2))
           (nal-unit-type      (read in 5))
           (rbsp-bytes '())
-          (nal-unit-header-bytes 1)
           )
+      (assert (= 0 forbidden-zero-bit) ()
+              "forbidden-zero-bit must be 0: ~a" forbidden-zero-bit)
       
       (when (or (= nal-unit-type 14)
                 (= nal-unit-type 20))
@@ -53,8 +54,8 @@
           (if (= svc-extension-flag  1)
               (parse-nal-unit-header-svc-extension in) ; specified in Annex G
             (parse-nal-unit-header-mvc-extension in))) ; specified in Annex H
-        (incf nal-unit-header-bytes 3))
-
+        )
+      
       (loop UNTIL (eos? in)
             FOR 3bytes = (peek in 24)
             DO 
@@ -66,17 +67,55 @@
               (push (read in 8) rbsp-bytes)))
       (setf rbsp-bytes (coerce (nreverse rbsp-bytes) 'octets))
 
-      (values forbidden-zero-bit
-              nal-ref-idc
+      (values nal-ref-idc
               nal-unit-type
               rbsp-bytes)
       )))
+
+(defun parse-seq-parameter-set-data (in)
+  (with-package (:h264.bit-stream)
+    (let ((profile-idc (read in 8))
+          (constraint-set0-flag (read in 1))
+          (constraint-set1-flag (read in 1))
+          (constraint-set2-flag (read in 1))
+          (constraint-set3-flag (read in 1))
+          (constraint-set4-flag (read in 1))
+          (constraint-set5-flag (read in 1))
+          (reserved-zero-2bits  (read in 2))
+          (level-idc            (read in 8))
+          )
+      (values profile-idc
+              constraint-set0-flag
+              constraint-set1-flag
+              constraint-set2-flag
+              constraint-set3-flag
+              constraint-set4-flag
+              constraint-set5-flag
+              reserved-zero-2bits
+              level-idc
+              (loop FOR b = (read in 8)
+                    UNTIL (eos? in)
+                    COLLECT b)
+              ))))
+
+(defun parse-sequence-parameter-set (in)
+  ;;; seq-parameter-set-data
+  (parse-seq-parameter-set-data in)
+
+  ;;; rbsp-trailing-bits
+  )
 
 (defun parse (in)
   (h264.bit-stream:with-input-stream (in in)
     (let ((nal-unit-bytes (read-nal-unit-bytes in)))
       (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
-      (parse-nal-unit in2)))))
+        (multiple-value-bind (nal-ref-idc nal-unit-type rbsp-bytes)
+                             (parse-nal-unit in2)
+          (declare (ignore nal-ref-idc))
+          (h264.bit-stream:with-input-from-octets (in3 rbsp-bytes)
+            (ecase nal-unit-type
+              (7 (parse-sequence-parameter-set in3))
+              )))))))
 
 (defun parse-file (filepath)
   (with-open-file (in filepath :element-type 'octet)

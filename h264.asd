@@ -13,6 +13,7 @@
                (:file "bit-stream/bit-stream")
 
                (:file "parser/package")
+               (:file "parser/exp-golomb-code")
                (:file "parser/parser")
 
                (:file "h264")))
