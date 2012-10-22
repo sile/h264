@@ -11,3 +11,73 @@
   (h264.bit-stream:read in 24) ; start-code-prefix
   (values))
 
+(defun read-nal-unit-bytes (in)
+  (seek-to-next-nal-unit in)
+  (prog1
+      (loop FOR 3byte = (h264.bit-stream:peek in 24)
+            UNTIL (or (= 3byte #x000000)
+                      (= 3byte #x000001))
+            COLLECT (h264.bit-stream:read in 8) INTO bytes
+            FINALLY (return (coerce bytes 'octets)))
+
+    ;; discard trailing bytes
+    (loop FOR 3byte = (h264.bit-stream:peek in 24)
+          UNTIL (= 3byte #x000000)
+          DO (assert (= (h264.bit-stream:read in 8) 0)
+                     ()
+                     "trailing-zero-8bits must be 0")
+          FINALLY
+          (h264.bit-stream:read in 24))))
+
+(defun parse-nal-unit-header-svc-extension (in)
+  (declare (ignore in))
+  (error "Not Implemented"))
+
+(defun parse-nal-unit-header-mvc-extension (in)
+  (declare (ignore in))
+  (error "Not Implemented"))
+
+;; 7.3.1: NAL unit syntax
+(defun parse-nal-unit (in)
+  (with-package (:h264.bit-stream)
+    (let ((forbidden-zero-bit (read in 1))
+          (nal-ref-idc        (read in 2))
+          (nal-unit-type      (read in 5))
+          (rbsp-bytes '())
+          (nal-unit-header-bytes 1)
+          )
+      
+      (when (or (= nal-unit-type 14)
+                (= nal-unit-type 20))
+        (let ((svc-extension-flag (read in 1)))
+          (if (= svc-extension-flag  1)
+              (parse-nal-unit-header-svc-extension in) ; specified in Annex G
+            (parse-nal-unit-header-mvc-extension in))) ; specified in Annex H
+        (incf nal-unit-header-bytes 3))
+
+      (loop UNTIL (eos? in)
+            FOR 3bytes = (peek in 24)
+            DO 
+            (if (= 3bytes #x000003)
+                ;; emulation-prevention-three-byte
+                (progn (push (read in 8) rbsp-bytes)
+                       (push (read in 8) rbsp-bytes)
+                       (read in 8))
+              (push (read in 8) rbsp-bytes)))
+      (setf rbsp-bytes (coerce (nreverse rbsp-bytes) 'octets))
+
+      (values forbidden-zero-bit
+              nal-ref-idc
+              nal-unit-type
+              rbsp-bytes)
+      )))
+
+(defun parse (in)
+  (h264.bit-stream:with-input-stream (in in)
+    (let ((nal-unit-bytes (read-nal-unit-bytes in)))
+      (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
+      (parse-nal-unit in2)))))
+
+(defun parse-file (filepath)
+  (with-open-file (in filepath :element-type 'octet)
+    (parse in)))
