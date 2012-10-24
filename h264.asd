@@ -14,6 +14,8 @@
 
                (:file "parser/package")
                (:file "parser/exp-golomb-code")
+               (:file "parser/util")
+               (:file "parser/syntax")
                (:file "parser/parser")
 
                (:file "h264")))
