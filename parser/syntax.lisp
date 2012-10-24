@@ -191,3 +191,94 @@
     ($ vui-parameters-present-flag)
     (when (= vui-parameters-present-flag 1)
       ($ vui-parameters))))
+
+(defmacro defsyntax (name &rest slots)
+  `(defstruct ,name
+     ,@(mapcar (lambda (s) (append s '(:read-only t))) 
+               slots)))
+
+;;; pic-parameter-set
+(defsyntax pic-parameter-set
+  (pic-parameter-set-id                         0 :type $ue)
+  (seq-parameter-set-id                         0 :type $ue)
+  (entropy-coding-mode-flag                     0 :type ($u 1))
+  (bottom-field-pic-order-in-frame-present-flag 0 :type ($u 1))
+  (num-slice-groups-minus1                      0 :type $ue)
+  (slice-group-map-type                         0 :type $ue)
+  (run-length-minus1-list             (empty $ue) :type ($list $ue))
+  (top-left-list                      (empty $ue) :type ($list $ue))
+  (bottom-right-list                  (empty $ue) :type ($list $ue))
+  (slice-group-change-direction-flag            0 :type ($u 1))
+  (slice-group-change-rate-minus1               0 :type $ue)
+  (pic-size-in-map-units-minus1                 0 :type $ue)
+  (slice-group-id-list                  (empty $u):type ($list $u)) ; v = (log2 num-slice-groups-minus1)
+  (num-ref-idx-10-default-active-minus1         0 :type $ue)
+  (num-ref-idx-11-default-active-minus1         0 :type $ue)
+  (weighted-pred-flag                           0 :type ($u 1))
+  (weighted-bipred-idc                          0 :type ($u 2))
+  (pic-init-qp-minus26                          0 :type $se)  ; relative to 26
+  (pic-init-qs-minus26                          0 :type $se)  ; relative to 26
+  (chroma-qp-index-offset                       0 :type $se)
+  (deblocking-filter-control-present-flag       0 :type ($u 1))
+  (constrained-intra-pred-flag                  0 :type ($u 1))
+  (redundant-pic-cnt-present-flag               0 :type ($u 1))
+  (transform-8x8-mode-flag                      0 :type ($u 1))
+  (pic-scaling-matrix-present-flag              0 :type ($u 1))
+  (pic-scaling-list-present-flag-list (empty ($u 1)) :type ($list ($u 1)))
+  (scaling-list-list                          nil :type null) ; TODO:
+  (second-chroma-qp-index-offset                0 :type $se))
+
+(defun parse-pic-parameter-set (in)
+  (with-parse-context (in pic-parameter-set)
+    ($ pic-parameter-set-id)
+    ($ seq-parameter-set-id)
+    ($ entropy-coding-mode-flag)
+    ($ bottom-field-pic-order-in-frame-present-flag)
+    ($ num-slice-groups-minus1)
+    (when (> num-slice-groups-minus1 0)
+      ($ slice-group-map-type)
+      (case slice-group-map-type
+        ((0)
+         ($ run-length-minus1-list :count (1+ num-slice-groups-minus1)))
+
+        ((2)
+         (loop WITH tmp1 = '() ; XXX:
+               WITH tmp2 = '()
+               REPEAT num-slice-groups-minus1
+           DO (push ($ue in) tmp1) ; top-left
+              (push ($ue in) tmp2) ; bottom-right
+           FINALLY
+           (setf top-left-list     (coerce (nreverse tmp1) '(vector $ue))
+                 bottom-right-list (coerce (nreverse tmp2) '(vector $ue)))))
+
+        ((3 4 5)
+         ($ slice-group-change-direction-flag)
+         ($ slice-group-change-rate-minus1))
+        
+        ((6)
+         ($ pic-size-in-map-units-minus1)
+         ($ slice-group-id-list :count (1+ pic-size-in-map-units-minus1)
+                                :parse-type `($u ,(ceiling (log (1+ num-slice-groups-minus1) 2)))))
+        ))
+    
+    ($ num-ref-idx-10-default-active-minus1)
+    ($ num-ref-idx-11-default-active-minus1)
+    ($ weighted-pred-flag)
+    ($ weighted-bipred-idc)
+    ($ pic-init-qp-minus26)
+    ($ pic-init-qs-minus26)
+    ($ chroma-qp-index-offset)
+    ($ deblocking-filter-control-present-flag)
+    ($ constrained-intra-pred-flag)
+    ($ redundant-pic-cnt-present-flag)
+    
+    (when (h264.bit-stream:more-rbsp-data? in)
+      ($ transform-8x8-mode-flag)
+      ($ pic-scaling-matrix-present-flag)
+      (error "Not Implemented")
+      )
+    ))
+    
+        
+        
+                           

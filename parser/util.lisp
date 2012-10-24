@@ -2,7 +2,7 @@
 
 ;; XXX: 暫定ファイル
 
-(deftype $u (bit-length) `(unsigned-byte ,bit-length))
+(deftype $u (&optional (bit-length 32)) `(unsigned-byte ,bit-length))
 (deftype $ue () '(unsigned-byte 32))
 (deftype $se () '(signed-byte 32))
 (deftype $list (type) `(vector ,type))
@@ -25,8 +25,8 @@
 (defun $se (&optional (in *default-bit-stream*))
   (parse-se in))
 
-(defmacro $list (type &key count)
-  `(repeat ,count ,type (,type)))
+(defmacro $list (type &key count (parse-type type))
+  `(repeat ,count ,type ,(if (listp parse-type) parse-type (list parse-type))))
 
 (defmacro repeat (n type fn)
   (let ((ary (gensym))

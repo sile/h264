@@ -5,9 +5,10 @@
 
 (defun seek-to-next-nal-unit (in)
   (loop UNTIL (= (h264.bit-stream:peek in 24) +START_CODE_PREFIX_ONE_3BYTES+)
-        DO (assert (= (h264.bit-stream:read in 8) +LEADING_ZERO_8BITS+)
+        FOR b = (h264.bit-stream:read in 8)
+        DO (assert (= b +LEADING_ZERO_8BITS+)
                    ()
-                   "leading-zero-8bits must be 0"))
+                   "leading-zero-8bits must be 0: ~a" b))
   (h264.bit-stream:read in 24) ; start-code-prefix
   (values))
 
@@ -19,15 +20,14 @@
                       (= 3byte #x000001))
             COLLECT (h264.bit-stream:read in 8) INTO bytes
             FINALLY (return (coerce bytes 'octets)))
-
+    
     ;; discard trailing bytes
     (loop FOR 3byte = (h264.bit-stream:peek in 24)
-          UNTIL (= 3byte #x000000)
-          DO (assert (= (h264.bit-stream:read in 8) 0)
+          UNTIL (= 3byte #x000001)
+          FOR b = (h264.bit-stream:read in 8)
+          DO (assert (= b 0)
                      ()
-                     "trailing-zero-8bits must be 0")
-          FINALLY
-          (h264.bit-stream:read in 24))))
+                     "trailing-zero-8bits must be 0: ~a" b))))
 
 (defun parse-nal-unit-header-svc-extension (in)
   (declare (ignore in))
@@ -75,28 +75,43 @@
 (defun parse-bit (in bit-length)
   (h264.bit-stream:read in bit-length))
 
-
-
+(defun parse-rbsp-trailing-bits (in)
+  (let ((rbsp-stop-one-bit (parse-bit in 1)))
+    (assert (= rbsp-stop-one-bit 1) () "rbsp-stop-one-bit must be 1: ~a" rbsp-stop-one-bit)
+    (loop UNTIL (h264.bit-stream:byte-aligned? in)
+          FOR rbsp-alignment-zero-bit = (parse-bit in 1)
+          DO 
+          (assert (= rbsp-alignment-zero-bit 0) ()
+                  "rbsp-alignment-zero-bit must be 0: ~a" rbsp-alignment-zero-bit))))
 
 (defun parse-sequence-parameter-set (in)
-  ;;; seq-parameter-set-data
-  (parse-seq-parameter-set-data in)
+  (prog1 (parse-seq-parameter-set-data in)
+    (parse-rbsp-trailing-bits in)
+    (assert (h264.bit-stream:eos? in) () "not eos")))
 
-  ;;; rbsp-trailing-bits
-  )
+(defun parse-picture-parameter-set (in)
+  (prog1 (parse-pic-parameter-set in)
+    (parse-rbsp-trailing-bits in)
+    (assert (h264.bit-stream:eos? in) () "not eos")))
 
 (defun parse (in)
   (h264.bit-stream:with-input-stream (in in)
-    (let ((nal-unit-bytes (read-nal-unit-bytes in)))
-      (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
-        (multiple-value-bind (nal-ref-idc nal-unit-type rbsp-bytes)
-                             (parse-nal-unit in2)
-          (declare (ignore nal-ref-idc))
-          (h264.bit-stream:with-input-from-octets (in3 rbsp-bytes)
-            (ecase nal-unit-type
-              (7 (parse-sequence-parameter-set in3))
-              )))))))
+    (loop REPEAT 2
+          COLLECT
+          (let ((nal-unit-bytes (read-nal-unit-bytes in)))
+            (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
+              (multiple-value-bind (nal-ref-idc nal-unit-type rbsp-bytes)
+                                   (parse-nal-unit in2)
+                (declare (ignore nal-ref-idc))
+                (h264.bit-stream:with-input-from-octets (in3 rbsp-bytes)
+                  (ecase nal-unit-type
+                    (7 (parse-sequence-parameter-set in3))
+                    (8 (parse-picture-parameter-set in3))
+                    ))))))))
 
 (defun parse-file (filepath)
   (with-open-file (in filepath :element-type 'octet)
     (parse in)))
+
+    
+    

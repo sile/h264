@@ -11,6 +11,7 @@
            peek
            byte-aligned?
            eos?
+           more-rbsp-data?
            ))
 (in-package :h264.bit-stream)
 
