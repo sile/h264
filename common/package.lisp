@@ -4,6 +4,8 @@
            octets
 
            with-package
+           with-all-slots
+           with-make-instance
            ))
 (in-package :h264.common)
 
@@ -38,3 +40,24 @@
                                (mapcar #'recur cdr))))
                  (otherwise exp))))
       `(locally ,@(mapcar #'recur body)))))
+
+
+(defmacro with-all-slots ((class-name) instance &body body)
+  (let ((slots (mapcar #'sb-mop:slot-definition-name (sb-mop:class-slots (find-class class-name)))))
+    `(with-slots ,slots
+                 (the ,class-name ,instance)
+       ,@body)))
+
+(defmacro with-make-instance ((class-name) &body body)
+  (let ((slots (sb-mop:class-slots (find-class class-name))))
+    `(let ,(mapcar (lambda (s) 
+                     `(,(sb-mop:slot-definition-name s) 
+                       ,(sb-mop:slot-definition-initform s)))
+                   slots)
+       ,@body
+       (,(intern (format nil "MAKE-~a" class-name))
+        ,@(mapcan (lambda (s)
+                    (let ((name (sb-mop:slot-definition-name s)))
+                      `(,(intern (symbol-name name) :keyword) 
+                        ,name)))
+                  slots)))))

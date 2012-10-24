@@ -4,7 +4,7 @@
   :name "h264"
   
   :serial t
-  :depends-on (:flexi-streams)
+  :depends-on (:flexi-streams) ; :sb-mop)
   :components ((:file "package")
                
                (:file "common/package")
