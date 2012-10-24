@@ -204,6 +204,41 @@
             )
       )))
 
+(defstruct seq-parameter-set-data
+  profile-idc
+  constraint-set0-flag
+  constraint-set1-flag
+  constraint-set2-flag
+  constraint-set3-flag
+  constraint-set4-flag
+  constraint-set5-flag
+  reserved-zero-2bits
+  level-idc
+  seq-parameter-set-id
+
+  log2-max-frame-num-minus4
+  pic-order-cnt-type
+  log2-max-pic-order-cnt-lsb-minus4
+  delta-pic-order-always-zero-flag
+  offset-for-non-ref-pic
+  offset-for-top-to-bottom-field
+  num-ref-frames-in-pic-order-cnt-cycle
+  offsets-for-ref-frame
+
+  max-num-ref-frames
+  gaps-in-frame-num-value-allowed-flag
+  pic-width-in-mbs-minus1
+  pic-height-in-map-units-minus1
+  frame-mbs-only-flag
+  mb-adaptive-frame-field-flag
+  direct-8x8-inference-flag
+  frame-cropping-flag
+  frame-crop-left-offset
+  frame-crop-right-offset
+  frame-crop-top-offset
+  frame-crop-bottom-offset
+  vui-parameters-present-flag
+  vui-parameters)
 
 (defun parse-seq-parameter-set-data (in)
   (with-package (:h264.bit-stream)
@@ -261,45 +296,41 @@
                 (parse-vui-parameters in)))
              )
 
-        (values profile-idc
-                constraint-set0-flag
-                constraint-set1-flag
-                constraint-set2-flag
-                constraint-set3-flag
-                constraint-set4-flag
-                constraint-set5-flag
-                reserved-zero-2bits
-                level-idc
-                seq-parameter-set-id
+        (make-seq-parameter-set-data
+         :profile-idc profile-idc
+         :constraint-set0-flag constraint-set0-flag
+         :constraint-set1-flag constraint-set1-flag
+         :constraint-set2-flag constraint-set2-flag
+         :constraint-set3-flag constraint-set3-flag
+         :constraint-set4-flag constraint-set4-flag
+         :constraint-set5-flag constraint-set5-flag
+         :reserved-zero-2bits reserved-zero-2bits
+         :level-idc level-idc
+         :seq-parameter-set-id seq-parameter-set-id
 
-                log2-max-frame-num-minus4
-                pic-order-cnt-type
-                log2-max-pic-order-cnt-lsb-minus4
-                delta-pic-order-always-zero-flag
-                offset-for-non-ref-pic
-                offset-for-top-to-bottom-field
-                num-ref-frames-in-pic-order-cnt-cycle
-                offsets-for-ref-frame
+         :log2-max-frame-num-minus4 log2-max-frame-num-minus4
+         :pic-order-cnt-type pic-order-cnt-type
+         :log2-max-pic-order-cnt-lsb-minus4 log2-max-pic-order-cnt-lsb-minus4
+         :delta-pic-order-always-zero-flag delta-pic-order-always-zero-flag
+         :offset-for-non-ref-pic offset-for-non-ref-pic
+         :offset-for-top-to-bottom-field offset-for-top-to-bottom-field
+         :num-ref-frames-in-pic-order-cnt-cycle num-ref-frames-in-pic-order-cnt-cycle
+         :offsets-for-ref-frame offsets-for-ref-frame
 
-                max-num-ref-frames
-                gaps-in-frame-num-value-allowed-flag
-                pic-width-in-mbs-minus1
-                pic-height-in-map-units-minus1
-                frame-mbs-only-flag
-                mb-adaptive-frame-field-flag
-                direct-8x8-inference-flag
-                frame-cropping-flag
-                frame-crop-left-offset
-                frame-crop-right-offset
-                frame-crop-top-offset
-                frame-crop-bottom-offset
-                vui-parameters-present-flag
-                vui-parameters
-                
-                (loop FOR b = (read in 8)
-                      UNTIL (eos? in)
-                      COLLECT b)
-                )))))
+         :max-num-ref-frames max-num-ref-frames
+         :gaps-in-frame-num-value-allowed-flag gaps-in-frame-num-value-allowed-flag
+         :pic-width-in-mbs-minus1 pic-width-in-mbs-minus1
+         :pic-height-in-map-units-minus1 pic-height-in-map-units-minus1
+         :frame-mbs-only-flag frame-mbs-only-flag
+         :mb-adaptive-frame-field-flag mb-adaptive-frame-field-flag
+         :direct-8x8-inference-flag direct-8x8-inference-flag
+         :frame-cropping-flag frame-cropping-flag
+         :frame-crop-left-offset frame-crop-left-offset
+         :frame-crop-right-offset frame-crop-right-offset
+         :frame-crop-top-offset frame-crop-top-offset
+         :frame-crop-bottom-offset frame-crop-bottom-offset
+         :vui-parameters-present-flag vui-parameters-present-flag
+         :vui-parameters vui-parameters)))))
 
 (defun parse-sequence-parameter-set (in)
   ;;; seq-parameter-set-data
