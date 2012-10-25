@@ -45,6 +45,7 @@
           (nal-unit-type      (read in 5))
           (rbsp-bytes '())
           )
+      (setf *nal-ref-idc* nal-ref-idc)
       (assert (= 0 forbidden-zero-bit) ()
               "forbidden-zero-bit must be 0: ~a" forbidden-zero-bit)
       
@@ -101,7 +102,7 @@
 
 (defun parse (in)
   (h264.bit-stream:with-input-stream (in in)
-    (loop REPEAT 4
+    (loop REPEAT 2000
           COLLECT
           (let ((nal-unit-bytes (read-nal-unit-bytes in)))
             (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)

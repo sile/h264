@@ -1,5 +1,7 @@
 (in-package :h264.parser)
 
+(defvar *nal-ref-idc*) ; XXX:
+
 ;;; TODO: h264.syntax的なパッケージを用意してそこに移動？
  
 ;;; VUI-parameters
@@ -109,6 +111,7 @@
   (parse-vui-parameters *default-bit-stream*))
 
 ;;; seq-parameter-set-data
+(defvar *seq-parameter-set-data*)
 (defstruct seq-parameter-set-data
   (profile-idc                           0 :type ($u 8) :read-only t)
   (constraint-set0-flag                  0 :type ($u 1) :read-only t)
@@ -120,6 +123,16 @@
   (reserved-zero-2bits                   0 :type ($u 2) :read-only t)
   (level-idc                             0 :type ($u 8) :read-only t)
   (seq-parameter-set-id                  0 :type $ue    :read-only t)
+
+  ;; TODO:
+  (chroma-format-idc 0 :type $ue)
+  (separate-colour-plane-flag 0 :type ($u 1))
+  (bit-depth-luma-minus8 0 :type ($u 1))
+  (bit-depth-chroma-minus8 0 :type $ue)
+  (qpprime-y-zero-transform-bypass-flag 0 :type ($u 1))
+  (seq-scaling-matrix-present-flag 0 :type ($u 1))
+  (seq-scaling-list-present-flag t :type t) ; TODO:
+  
   (log2-max-frame-num-minus4             0 :type $ue    :read-only t)
   (pic-order-cnt-type                    0 :type $ue    :read-only t)
   (log2-max-pic-order-cnt-lsb-minus4     0 :type $ue    :read-only t)
@@ -144,6 +157,7 @@
   (vui-parameters                      nil :type $vui-parameters :read-only t))
 
 (defun parse-seq-parameter-set-data (in)
+  (setf *seq-parameter-set-data*
   (with-parse-context (in seq-parameter-set-data) 
     ($ profile-idc)
     ($ constraint-set0-flag)
@@ -192,7 +206,7 @@
 
     ($ vui-parameters-present-flag)
     (when (= vui-parameters-present-flag 1)
-      ($ vui-parameters))))
+      ($ vui-parameters)))))
 
 (defmacro defsyntax (name &rest slots)
   `(defstruct ,name
@@ -200,6 +214,7 @@
                slots)))
 
 ;;; pic-parameter-set
+(defvar *pic-parameter-set*)
 (defsyntax pic-parameter-set
   (pic-parameter-set-id                         0 :type $ue)
   (seq-parameter-set-id                         0 :type $ue)
@@ -231,6 +246,7 @@
   (second-chroma-qp-index-offset                0 :type $se))
 
 (defun parse-pic-parameter-set (in)
+  (setf *pic-parameter-set*
   (with-parse-context (in pic-parameter-set)
     ($ pic-parameter-set-id)
     ($ seq-parameter-set-id)
@@ -279,7 +295,7 @@
       ($ pic-scaling-matrix-present-flag)
       (error "Not Implemented")
       )
-    ))
+    )))
 
 ;;; user-data-registered
 (defsyntax user-data-unregistered
@@ -324,59 +340,173 @@
 (defun $sei-message ()
   (parse-sei-message *default-bit-stream*))
 
+(defvar *sei*)
 (defsyntax sei
-  (sei-message-list (empty $sei-message) :type ($list $sei-message))) ; TODO: compiler-warningを消したい
+  (sei-message-list nil #|(empty $sei-message)|# :type (or null ($list $sei-message)))) ; XXX:
                     
 (deftype $sei () 'sei)
 
 (defun parse-sei (in)
+  (setf *sei*
   (with-parse-context (in sei)
     ;; XXX: 暫定
     (setf sei-message-list
           (loop WHILE (h264.bit-stream:more-rbsp-data? in)
                 COLLECT ($sei-message) INTO list
                 FINALLY (return (coerce list '($list $sei-message)))))
-    ))
+    )))
 (defun $sei ()
   (parse-sei *default-bit-stream*))
 
+
 ;;
+;; TODO: いろいろ
+(defsyntax ref-pic-list-modification
+  (ref-pic-list-modification-flag-l0 0 :type ($u 1))
+  (modification-of-pic-nums-idc      0 :type $ue)
+  (abs-diff-pic-num-minus1           0 :type $ue)
+  (long-term-pic-num                 0 :type $ue)
+  
+  (ref-pic-list-modification-flag-l1 0 :type ($u 1)))
+
 (defun parse-rbsp-slice-trailing-bits (in)
   (parse-rbsp-trailing-bits in)
   ;; TODO: entropy-coding-mode-flagのハンドリング
+  (assert (= 0 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag)) () "Not Implemented")
   (assert (h264.bit-stream:eos? in) () "not eos"))
+
+;;;
+(defun parse-ref-pic-list-modification (in)
+  in)
+  
 
 ;;; slice-header
 (defsyntax slice-header
-  (first-mb-in-slice 0 :type $ue)
-  (slice-type 0 :type $ue)
-  (pic-parameter-set-id 0 :type $ue)
-  (colour-plane-id 0 :type ($u 2))
-  (frame-num 0 :type $u) ; v? TODO
-  (field-pic-flag 0 :type ($u 1))
-  (bottom-field-flag 0 :Type ($u 1))
-  (idr-pic-id 0 :type $ue)
-  (pic-order-cnt-lsb 0 :type $u); v? TODO
-  (delta-pic-order-cnt-bottom 0 :type $se)
-  (delta-pic-order-cnt0 0 :type $se)
-  (delta-pic-order-cnt1 0 :type $se)
-  (redundant-pic-cnt 0 :type $ue)
-  (direct-spatial-mv-pred-flag 0 :type ($u 1))
+  (first-mb-in-slice                0 :type $ue)
+  (slice-type                       0 :type $ue)
+  (pic-parameter-set-id             0 :type $ue)
+  (colour-plane-id                  0 :type ($u 2))
+  (frame-num                        0 :type $u) ; v? TODO
+  (field-pic-flag                   0 :type ($u 1))
+  (bottom-field-flag                0 :Type ($u 1))
+  (idr-pic-id                       0 :type $ue)
+  (pic-order-cnt-lsb                0 :type $u); v? TODO
+  (delta-pic-order-cnt-bottom       0 :type $se)
+  (delta-pic-order-cnt0             0 :type $se)
+  (delta-pic-order-cnt1             0 :type $se)
+  (redundant-pic-cnt                0 :type $ue)
+  (direct-spatial-mv-pred-flag      0 :type ($u 1))
   (num-ref-idx-active-override-flag 0 :type ($u 1))
-  (num-ref-idx-10-active-minus1 0 :type $ue)
-  (num-ref-idx-11-active-minus1 0 :type $ue)
-  (ref-pic-list-mvc-modification t :type t)
-  (ref-pic-ist-modification t :type t)
-  (pred-weight-table t :type t)
-  (dec-ref-pic-marking t :type t)
-  (cabac-init-idc 0 :type $ue)
-  (slice-qp-delta 0 :type $se)
-  (sp-for-switch-flag 0 :type ($u 1))
-  (slice-qs-delta 0 :type $se)
-  (disable-deblock-filter-idc 0 :type $ue)
-  (slice-alpha-c0-offset-div2 0 :type $se)
-  (slice-beta-offset-div2 0 :type $se)
-  (slice-group-change-cycle 2 :type $u)) ; v? TODO
+  (num-ref-idx-10-active-minus1     0 :type $ue)
+  (num-ref-idx-11-active-minus1     0 :type $ue)
+  (ref-pic-list-mvc-modification    t :type t)
+  (ref-pic-list-modification         t :type t)
+  (pred-weight-table                t :type t)
+  (dec-ref-pic-marking              t :type t)
+  (cabac-init-idc                   0 :type $ue)
+  (slice-qp-delta                   0 :type $se)
+  (sp-for-switch-flag               0 :type ($u 1))
+  (slice-qs-delta                   0 :type $se)
+  (disable-deblock-filter-idc       0 :type $ue)
+  (slice-alpha-c0-offset-div2       0 :type $se)
+  (slice-beta-offset-div2           0 :type $se)
+  (slice-group-change-cycle         2 :type $u)) ; v? TODO
+
+(defun parse-slice-header (in &key idr? nal-unit-type &aux slice-type-name)
+  (with-parse-context (in slice-header)
+    ($ first-mb-in-slice)
+    ($ slice-type)
+    ($ pic-parameter-set-id)
+    
+    (when (= 1 (slot-value *seq-parameter-set-data* 'separate-colour-plane-flag))
+      ($ colour-plane-id))
+    
+    ($ frame-num (ceiling (log (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4)) 
+                               2)))
+    
+    (when (= 0 (slot-value *seq-parameter-set-data* 'frame-mbs-only-flag))
+      ($ field-pic-flag)
+      (when (= field-pic-flag 1)
+        ($ bottom-field-flag)))
+    
+    (when idr?
+      ($ idr-pic-id))
+
+    (when (= 0 (slot-value *seq-parameter-set-data* 'pic-order-cnt-type))
+      ($ pic-order-cnt-lsb (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-pic-order-cnt-lsb-minus4)))
+      (when (and (= 1 (slot-value *pic-parameter-set* 'bottom-field-pic-order-in-frame-present-flag))
+                 (= 0 field-pic-flag))
+        ($ delta-pic-order-cnt-bottom)))
+
+    (when (and (= 1 (slot-value *seq-parameter-set-data* 'pic-order-cnt-type))
+               (= 0 (slot-value *seq-parameter-set-data* 'delta-pic-order-always-zero-flag)))
+      ($ delta-pic-order-cnt0)
+      (when (and (= 1 (slot-value *pic-parameter-set* 'bottom-field-pic-order-in-frame-present-flag))
+                 (= 0 field-pic-flag))
+        ($ delta-pic-order-cnt1)))
+
+    (when (= 1 (slot-value *pic-parameter-set* 'redundant-pic-cnt-present-flag))
+      ($ redundant-pic-cnt))
+
+    (setf slice-type-name (ecase slice-type
+                            ((0 5) :P)
+                            ((1 6) :B)
+                            ((2 7) :I)
+                            ((3 8) :SP)
+                            ((4 9) :SI)))
+    
+    (when (eq slice-type-name :B)
+      ($ direct-spatial-mv-pred-flag))
+
+    (when (member slice-type-name '(:P :SP :B))
+      ($ num-ref-idx-active-override-flag)
+      (when (= 1 num-ref-idx-active-override-flag)
+        ($ num-ref-idx-10-active-minus1)
+        (when (eq slice-type-name :B)
+          ($ num-ref-idx-11-active-minus1))))
+
+    (if (= nal-unit-type 20)
+        (error "Not Implemented: ref-pic-list-mvc-modification")
+      (setf ref-pic-list-modification (parse-ref-pic-list-modification in)))
+
+    (when (or (and (= 1 (slot-value *pic-parameter-set* 'weighted-pred-flag))
+                   (member slice-type-name '(:P :SP)))
+              (and (= 1 (slot-value *pic-parameter-set* 'weighted-bipred-idc))
+                   (eq slice-type-name :B)))
+      (error "Not Implemented: pred-wieght-table"))
+
+    (when (/= 0 *nal-ref-idc*)
+      (error "Not Implemented: dec-ref-pic-marking"))
+
+    (when (and (= 1 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag))
+               (not (member slice-type-name '(:I :SI))))
+      ($ cabac-init-idc))
+
+    ($ slice-qp-delta)
+
+    (when (member slice-type-name '(:SP :SI))
+      (when (eq slice-type-name :SP)
+        ($ sp-for-switch-flag))
+      ($ slice-qs-delta))
+
+    (when (= 1 (slot-value *pic-parameter-set* 'deblocking-filter-control-present-flag))
+      ($ disable-deblock-filter-idc)
+      (when (/= 1 disable-deblock-filter-idc)
+        ($ slice-alpha-c0-offset-div2)
+        ($ slice-beta-offset-div2)))
+
+    (when (and (> (slot-value *pic-parameter-set* 'num-slice-groups-minus1) 0)
+               (<= 3 (slot-value *pic-parameter-set* 'slice-group-map-type) 5))
+      ($ slice-group-change-cycle
+         (ceiling (log (1+ (/ (1+ (slot-value *pic-parameter-set* 'pic-size-in-map-units-minus1))
+                              (1+ (slot-value *pic-parameter-set* 'slice-group-change-rate-minus1))))
+                       2))
+         ))
+    ))
+
+(defun parse-slice-data (in)
+  (declare (ignore in))
+  (error "Not Implemented"))
 
 ;;; Coded slice of an IDR picture 
 (defsyntax slice-layer-without-partitioning 
@@ -385,8 +515,6 @@
 
 (defun parse-slice-layer-without-partitioning (in)
   (with-parse-context (in slice-layer-without-partitioning)
-    (setf slice-header (parse-slice-header in)
-          slice-data   (parse-slice-data in))
+    (setf slice-header (parse-slice-header in :idr? t :nal-unit-type 5)
+          slice-data   :todo #+C(parse-slice-data in))
     (parse-rbsp-slice-trailing-bits in)))
-
-
