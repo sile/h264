@@ -339,3 +339,54 @@
     ))
 (defun $sei ()
   (parse-sei *default-bit-stream*))
+
+;;
+(defun parse-rbsp-slice-trailing-bits (in)
+  (parse-rbsp-trailing-bits in)
+  ;; TODO: entropy-coding-mode-flagのハンドリング
+  (assert (h264.bit-stream:eos? in) () "not eos"))
+
+;;; slice-header
+(defsyntax slice-header
+  (first-mb-in-slice 0 :type $ue)
+  (slice-type 0 :type $ue)
+  (pic-parameter-set-id 0 :type $ue)
+  (colour-plane-id 0 :type ($u 2))
+  (frame-num 0 :type $u) ; v? TODO
+  (field-pic-flag 0 :type ($u 1))
+  (bottom-field-flag 0 :Type ($u 1))
+  (idr-pic-id 0 :type $ue)
+  (pic-order-cnt-lsb 0 :type $u); v? TODO
+  (delta-pic-order-cnt-bottom 0 :type $se)
+  (delta-pic-order-cnt0 0 :type $se)
+  (delta-pic-order-cnt1 0 :type $se)
+  (redundant-pic-cnt 0 :type $ue)
+  (direct-spatial-mv-pred-flag 0 :type ($u 1))
+  (num-ref-idx-active-override-flag 0 :type ($u 1))
+  (num-ref-idx-10-active-minus1 0 :type $ue)
+  (num-ref-idx-11-active-minus1 0 :type $ue)
+  (ref-pic-list-mvc-modification t :type t)
+  (ref-pic-ist-modification t :type t)
+  (pred-weight-table t :type t)
+  (dec-ref-pic-marking t :type t)
+  (cabac-init-idc 0 :type $ue)
+  (slice-qp-delta 0 :type $se)
+  (sp-for-switch-flag 0 :type ($u 1))
+  (slice-qs-delta 0 :type $se)
+  (disable-deblock-filter-idc 0 :type $ue)
+  (slice-alpha-c0-offset-div2 0 :type $se)
+  (slice-beta-offset-div2 0 :type $se)
+  (slice-group-change-cycle 2 :type $u)) ; v? TODO
+
+;;; Coded slice of an IDR picture 
+(defsyntax slice-layer-without-partitioning 
+  (slice-header t :type t)  ; XXX: type
+  (slice-data   t :type t)) ; XXX: type
+
+(defun parse-slice-layer-without-partitioning (in)
+  (with-parse-context (in slice-layer-without-partitioning)
+    (setf slice-header (parse-slice-header in)
+          slice-data   (parse-slice-data in))
+    (parse-rbsp-slice-trailing-bits in)))
+
+
