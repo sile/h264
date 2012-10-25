@@ -94,9 +94,14 @@
     (parse-rbsp-trailing-bits in)
     (assert (h264.bit-stream:eos? in) () "not eos")))
 
+(Defun parse-supplemental-enhancement-information (in)
+  (prog1 (parse-sei in)
+    (parse-rbsp-trailing-bits in)
+    (assert (h264.bit-stream:eos? in) () "not eos")))
+
 (defun parse (in)
   (h264.bit-stream:with-input-stream (in in)
-    (loop REPEAT 2
+    (loop REPEAT 3
           COLLECT
           (let ((nal-unit-bytes (read-nal-unit-bytes in)))
             (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
@@ -105,6 +110,7 @@
                 (declare (ignore nal-ref-idc))
                 (h264.bit-stream:with-input-from-octets (in3 rbsp-bytes)
                   (ecase nal-unit-type
+                    (6 (parse-supplemental-enhancement-information in3))
                     (7 (parse-sequence-parameter-set in3))
                     (8 (parse-picture-parameter-set in3))
                     ))))))))
@@ -112,6 +118,3 @@
 (defun parse-file (filepath)
   (with-open-file (in filepath :element-type 'octet)
     (parse in)))
-
-    
-    

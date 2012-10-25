@@ -30,8 +30,8 @@
 (defun more-rbsp-data? (in)
   (declare (bit-stream in))
   (with-slots (source octets) in
-    (and (not (listen source))
-         (> (length octets) 1))))
+    (or (listen source)
+        (> (length octets) 1))))
 
 (defun byte-aligned? (in)
   (declare (bit-stream in))

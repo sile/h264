@@ -105,6 +105,8 @@
       ($ max-num-reorder-frames)
       ($ max-dec-frame-buffering))))
 
+(defun $vui-parameters ()
+  (parse-vui-parameters *default-bit-stream*))
 
 ;;; seq-parameter-set-data
 (defstruct seq-parameter-set-data
@@ -278,7 +280,47 @@
       (error "Not Implemented")
       )
     ))
-    
-        
-        
-                           
+
+;;; supplemental enhancement information (SEI)
+(defsyntax sei-message
+  (payload-type              0 :type ($u 32)) ; XXX: type
+  (payload-size              0 :type ($u 32))
+  (payload      (empty ($u 8)) :type octets)  ; TODO: 中身の解釈は後で
+  )
+
+(deftype $sei-message () 'sei-message)
+
+(defun parse-sei-message (in)
+  (with-parse-context (in sei-message)
+    (with-package (:h264.bit-stream)
+      (let ((type (loop FOR byte = (read in 8)
+                        SUM byte
+                        WHILE (= byte #xFF)))
+            (size (loop FOR byte = (read in 8)
+                        SUM byte
+                        WHILE (= byte #xFF))))
+        (setf payload-type type
+              payload-size size
+              payload (loop REPEAT size
+                            COLLECT (read in 8) INTO list
+                            FINALLY (return (coerce list 'octets))))
+        ))))
+
+(defun $sei-message ()
+  (parse-sei-message *default-bit-stream*))
+
+(defsyntax sei
+  (sei-message-list (empty $sei-message) :type ($list $sei-message))) ; TODO: compiler-warningを消したい
+                    
+(deftype $sei () 'sei)
+
+(defun parse-sei (in)
+  (with-parse-context (in sei)
+    ;; XXX: 暫定
+    (setf sei-message-list
+          (loop WHILE (h264.bit-stream:more-rbsp-data? in)
+                COLLECT ($sei-message) INTO list
+                FINALLY (return (coerce list '($list $sei-message)))))
+    ))
+(defun $sei ()
+  (parse-sei *default-bit-stream*))
