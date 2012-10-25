@@ -281,11 +281,21 @@
       )
     ))
 
+;;; user-data-registered
+(defsyntax user-data-unregistered
+  (uuid-iso-ie-11578          0 :type ($u 128))
+  (payload       (empty ($u 8)) :type ($list ($u 8))))
+
+(defun parse-sei-payload-user-data-unregistered (in size)
+  (with-parse-context (in user-data-unregistered)
+    ($ uuid-iso-ie-11578)
+    ($ payload :count (- size (/ 128 8)))))
+
 ;;; supplemental enhancement information (SEI)
 (defsyntax sei-message
   (payload-type              0 :type ($u 32)) ; XXX: type
   (payload-size              0 :type ($u 32))
-  (payload      (empty ($u 8)) :type octets)  ; TODO: 中身の解釈は後で
+  (payload                   t :type t)       ; XXX: type
   )
 
 (deftype $sei-message () 'sei-message)
@@ -300,11 +310,16 @@
                         SUM byte
                         WHILE (= byte #xFF))))
         (setf payload-type type
-              payload-size size
-              payload (loop REPEAT size
-                            COLLECT (read in 8) INTO list
-                            FINALLY (return (coerce list 'octets))))
-        ))))
+              payload-size size)
+        (let ((payload-bytes (loop REPEAT size
+                                   COLLECT (read in 8) INTO list
+                                   FINALLY (return (coerce list 'octets)))))
+          (with-input-from-octets (in2 payload-bytes)
+            (setf payload
+                  (ecase payload-type
+                    (5 (parse-sei-payload-user-data-unregistered in2 payload-size))
+                    ))
+        ))))))
 
 (defun $sei-message ()
   (parse-sei-message *default-bit-stream*))

@@ -30,8 +30,12 @@
 (defun more-rbsp-data? (in)
   (declare (bit-stream in))
   (with-slots (source octets) in
-    (or (listen source)
-        (> (length octets) 1))))
+    (loop WHILE (listen source)
+          DO
+          (when (> (length octets) 1)
+            (return-from more-rbsp-data? t))
+          (setf octets (append octets (list (read-byte source)))))
+    nil))
 
 (defun byte-aligned? (in)
   (declare (bit-stream in))
