@@ -363,11 +363,9 @@
 ;; TODO: いろいろ
 (defsyntax ref-pic-list-modification
   (ref-pic-list-modification-flag-l0 0 :type ($u 1))
-  (modification-of-pic-nums-idc      0 :type $ue)
-  (abs-diff-pic-num-minus1           0 :type $ue)
-  (long-term-pic-num                 0 :type $ue)
-  
-  (ref-pic-list-modification-flag-l1 0 :type ($u 1)))
+  (ref-pic-list-modification-flag-l1 0 :type ($u 1))
+  (xxx-list nil :type list)  ; XXX:
+  (yyy-list nil :type list)) ; XXX:
 
 (defun parse-rbsp-slice-trailing-bits (in)
   (parse-rbsp-trailing-bits in)
@@ -375,10 +373,65 @@
   (assert (= 0 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag)) () "Not Implemented")
   (assert (h264.bit-stream:eos? in) () "not eos"))
 
-;;;
-(defun parse-ref-pic-list-modification (in)
-  in)
-  
+(defun parse-ref-pic-list-modification (in slice-type)
+  (with-parse-context (in ref-pic-list-modification)
+    (when (/= 2 4 (mod slice-type 5))
+      ($ ref-pic-list-modification-flag-l0)
+      (when (= 1 ref-pic-list-modification-flag-l0)
+        (setf xxx-list
+              (reverse
+               (loop FOR md = ($ue)  ; modification-of-pic-nums-idc
+                     UNTIL (= md 3)
+                 COLLECT
+                 (remove nil (list (when (or (= md 0) (= md 1)) 
+                                     `(:abs-diff-pic-num-minus1 ,($ue)))
+                                   (when (= md 2)
+                                     `(:long-term-pic-num ,($ue))))))))))
+    (when (= 1 (mod slice-type 5))
+      ($ ref-pic-list-modification-flag-l1)
+      (when (= 1 ref-pic-list-modification-flag-l1)
+        (setf yyy-list
+              (reverse
+               (loop FOR md = ($ue) ; modification-of-pic-nums-idc
+                     UNTIL (= md 3)
+                 COLLECT
+                 (remove nil (list (when (or (= md 0) (= md 1))
+                                     `(:abs-diff-pic-num-minus1 ,($ue)))
+                                   (when (= md 2)
+                                     `(:long-term-pic-num ,($ue)))))))
+              )))))
+
+;; dec_ref_pic_marking
+(defsyntax dec-ref-pic-marking
+  (no-output-of-prior-pics-flag 0 :type ($u 1))
+  (long-term-reference-flag     0 :type ($u 1))
+  (adaptive-ref-pic-marking-mode-flag 0 :type ($u 1))
+  (xxx-list t :type t))  ; XXX:
+
+(defun parse-dec-ref-pic-marking (in &key idr)
+  (with-parse-context (in dec-ref-pic-marking)
+    (if idr
+        (progn
+          ($ no-output-of-prior-pics-flag)
+          ($ long-term-reference-flag))
+      (progn
+        ($ adaptive-ref-pic-marking-mode-flag)
+        (when (= adaptive-ref-pic-marking-mode-flag 1)
+          (setf xxx-list
+                (reverse
+                 (loop FOR op = ($ue)
+                       UNTIL (= op 0)
+                   COLLECT
+                   (let ((list '()))
+                     (when (or (= op 1) (= op 3))
+                       (push `(:difference-of-pic-nums-minus1 ,($ue)) list))
+                     (when (= op 2)
+                       (push `(:long-term-pic-num ,($ue)) list))
+                     (when (or (= op 3) (= op 6))
+                       (push `(:long-term-frame-idx ,($ue)) list))
+                     (when (= op 4)
+                       (push `(:max-long-term-frame-idx-plus1 ,($ue)) list)))))
+                ))))))
 
 ;;; slice-header
 (defsyntax slice-header
@@ -421,8 +474,9 @@
     (when (= 1 (slot-value *seq-parameter-set-data* 'separate-colour-plane-flag))
       ($ colour-plane-id))
     
-    ($ frame-num (ceiling (log (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4)) 
-                               2)))
+    (print (list :flame-bit-len (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4))))
+
+    ($ frame-num (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4)))
     
     (when (= 0 (slot-value *seq-parameter-set-data* 'frame-mbs-only-flag))
       ($ field-pic-flag)
@@ -467,7 +521,7 @@
 
     (if (= nal-unit-type 20)
         (error "Not Implemented: ref-pic-list-mvc-modification")
-      (setf ref-pic-list-modification (parse-ref-pic-list-modification in)))
+      (setf ref-pic-list-modification (parse-ref-pic-list-modification in slice-type)))
 
     (when (or (and (= 1 (slot-value *pic-parameter-set* 'weighted-pred-flag))
                    (member slice-type-name '(:P :SP)))
@@ -476,7 +530,7 @@
       (error "Not Implemented: pred-wieght-table"))
 
     (when (/= 0 *nal-ref-idc*)
-      (error "Not Implemented: dec-ref-pic-marking"))
+      (setf dec-ref-pic-marking (parse-dec-ref-pic-marking in :idr t)))
 
     (when (and (= 1 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag))
                (not (member slice-type-name '(:I :SI))))
@@ -517,4 +571,5 @@
   (with-parse-context (in slice-layer-without-partitioning)
     (setf slice-header (parse-slice-header in :idr? t :nal-unit-type 5)
           slice-data   :todo #+C(parse-slice-data in))
+    (print slice-header)
     (parse-rbsp-slice-trailing-bits in)))
