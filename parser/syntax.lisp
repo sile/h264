@@ -463,7 +463,7 @@
   (disable-deblock-filter-idc       0 :type $ue)
   (slice-alpha-c0-offset-div2       0 :type $se)
   (slice-beta-offset-div2           0 :type $se)
-  (slice-group-change-cycle         2 :type $u)) ; v? TODO
+  (slice-group-change-cycle         0 :type $u)) ; v? TODO
 
 (defun parse-slice-header (in &key idr? nal-unit-type &aux slice-type-name)
   (with-parse-context (in slice-header)
@@ -474,8 +474,6 @@
     (when (= 1 (slot-value *seq-parameter-set-data* 'separate-colour-plane-flag))
       ($ colour-plane-id))
     
-    (print (list :flame-bit-len (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4))))
-
     ($ frame-num (+ 4 (slot-value *seq-parameter-set-data* 'log2-max-frame-num-minus4)))
     
     (when (= 0 (slot-value *seq-parameter-set-data* 'frame-mbs-only-flag))
@@ -558,9 +556,71 @@
          ))
     ))
 
-(defun parse-slice-data (in)
-  (declare (ignore in))
-  (error "Not Implemented"))
+(defun next-mb-address (curr-mb-address)
+  (declare (ignore curr-mb-address))
+  ;; (error "Not Implemented: next-mb-address") 
+  ;; XXX: 不正確
+  curr-mb-address)
+
+;;; slice-data
+(defsyntax slice-data
+  (xxx-list nil :type list)) ; XXX:
+
+(defun parse-slice-data (in header)
+  (declare (slice-header header))
+  (with-parse-context (in slice-data)
+    (when (= 1 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag))
+      (loop UNTIL (h264.bit-stream:byte-aligned? in)
+            FOR cabac-alignment-one-bit = (h264.bit-stream:read in 1)
+            DO (assert (= 1 cabac-alignment-one-bit) () 
+                       "cabac-alignment-one-bit must be 1: ~a" cabac-alignment-one-bit)))
+    
+    (let* ((mb-aff-frame-flag (and (= 1 (slot-value *seq-parameter-set-data* 'mb-adaptive-frame-field-flag))
+                                   (= 0 (slot-value header 'field-pic-flag))))
+           (curr-mb-addr (if mb-aff-frame-flag (slot-value header 'first-mb-in-slice) 0))
+           (more-data? t)
+           (prev-mb-skipped? nil)
+           (entropy-coding-mode? (= 1 (slot-value *pic-parameter-set* 'entropy-coding-mode-flag)))
+           (slice-type (slot-value header 'slice-type))
+           (slice-type-name (ecase slice-type
+                              ((0 5) :P)
+                              ((1 6) :B)
+                              ((2 7) :I)
+                              ((3 8) :SP)
+                              ((4 9) :SI))))
+      (setf xxx-list
+            (reverse
+             (loop WHILE more-data?
+               COLLECT
+               (prog1
+               (remove nil
+                 (list (when (not (member slice-type-name '(:I :SI)))
+                         (if (not entropy-coding-mode?)
+                             (let ((mb-skip-run ($ue)))
+                               (setf prev-mb-skipped? (> mb-skip-run 0))
+                               (loop REPEAT mb-skip-run
+                                     DO (setf curr-mb-addr (next-mb-address curr-mb-addr)))
+                               (when (> mb-skip-run 0)
+                                 (setf more-data? (h264.bit-stream:more-rbsp-data? in)))
+                               `(:mb-skip-run ,mb-skip-run))
+                           (flet (($ae () (error "Not Implemented: $ae")))
+                             (let ((mb-skip-flag ($ae)))
+                               (setf more-data? (= 0 mb-skip-flag))
+                               `(:mb-skip-flag ,mb-skip-flag)))
+                           ))
+                       (when more-data?
+                         (when (and mb-aff-frame-flag
+                                    (or (= 0 (mod curr-mb-addr 2))
+                                        (and (= 1 (mod curr-mb-addr 2)) prev-mb-skipped?)))
+                           (error "Not Implemented: mb-field-decoding-flag"))
+                                             
+                         (error "Not Implemented: macro-block"))
+
+                       (if (not entropy-coding-mode?)
+                           (progn (setf more-data? (h264.bit-stream:more-rbsp-data? in)) nil)
+                         (error "Not Implemented"))))
+               (setf curr-mb-addr (next-mb-address curr-mb-addr)))
+               ))))))
 
 ;;; Coded slice of an IDR picture 
 (defsyntax slice-layer-without-partitioning 
@@ -570,6 +630,6 @@
 (defun parse-slice-layer-without-partitioning (in)
   (with-parse-context (in slice-layer-without-partitioning)
     (setf slice-header (parse-slice-header in :idr? t :nal-unit-type 5)
-          slice-data   :todo #+C(parse-slice-data in))
+          slice-data   (parse-slice-data in slice-header))
     (print slice-header)
     (parse-rbsp-slice-trailing-bits in)))

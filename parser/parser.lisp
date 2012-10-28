@@ -102,7 +102,7 @@
 
 (defun parse (in)
   (h264.bit-stream:with-input-stream (in in)
-    (loop REPEAT 2000
+    (loop REPEAT 4
           COLLECT
           (let ((nal-unit-bytes (read-nal-unit-bytes in)))
             (h264.bit-stream:with-input-from-octets (in2 nal-unit-bytes)
